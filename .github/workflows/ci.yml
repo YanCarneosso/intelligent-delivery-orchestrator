@@ -21,9 +21,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -45,7 +45,7 @@ jobs:
         run: python -m pytest -m "not integration" --junitxml=junit.xml --cov-report=xml
       - name: Publish test evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-evidence
           path: |
@@ -59,11 +59,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set up SAM CLI
         uses: aws-actions/setup-sam@v2
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install CloudFormation linter
@@ -72,4 +72,3 @@ jobs:
         run: sam validate --lint
       - name: Build deployment artifacts
         run: sam build
-
