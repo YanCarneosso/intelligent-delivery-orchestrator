@@ -1,0 +1,36 @@
+name: Bug report
+description: Report reproducible incorrect behavior
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Remove personal data, order notes, execution payloads, and credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include execution mode (local or real AWS), revision, and sanitized input.
+    validations:
+      required: true
+  - type: dropdown
+    id: safety
+    attributes:
+      label: Food-safety or security impact
+      options:
+        - None known
+        - Possible impact
+        - Confirmed impact — use SECURITY.md for sensitive details
+    validations:
+      required: true
+
