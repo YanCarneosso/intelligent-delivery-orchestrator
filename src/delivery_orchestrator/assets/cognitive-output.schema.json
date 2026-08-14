@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intelligent-delivery.example/schemas/cognitive-output.schema.json",
+  "title": "Cognitive analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intent", "analise_sentimento", "prioridade", "risco_alergia", "restricoes", "confidence"],
+  "properties": {
+    "intent": {"type": "string", "enum": ["ORDER", "QUESTION", "COMPLAINT", "UNKNOWN"]},
+    "analise_sentimento": {"type": "string", "enum": ["POSITIVE", "NEUTRAL", "ANXIOUS", "NEGATIVE"]},
+    "prioridade": {"type": "string", "enum": ["NORMAL", "HIGH"]},
+    "risco_alergia": {"type": "boolean"},
+    "restricoes": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 20,
+      "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,39}$"}
+    },
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+  }
+}
+

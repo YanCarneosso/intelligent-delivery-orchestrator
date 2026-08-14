@@ -1,0 +1,15 @@
+{
+  "order_id": "ORD-ALG-001",
+  "idempotency_key": "idem-ord-alg-001",
+  "correlation_id": "corr-ord-alg-001",
+  "product": {"sku": "BOWL-01", "name": "Bowl tropical", "quantity": 2},
+  "notes": "Sou alérgico a castanhas e preciso de muito cuidado no preparo.",
+  "address": {
+    "city": "Sao Paulo",
+    "state": "SP",
+    "postal_code": "01310-100",
+    "delivery_instructions": "Deixar na recepcao."
+  },
+  "payment_method": "CARD"
+}
+

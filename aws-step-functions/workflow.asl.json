@@ -1,0 +1,327 @@
+{
+  "Comment": "Intelligent Delivery Orchestrator - deterministic control around untrusted AI output",
+  "StartAt": "ValidateOrder",
+  "TimeoutSeconds": 120,
+  "States": {
+    "ValidateOrder": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ValidateFunctionArn}",
+        "Payload.$": "$"
+      },
+      "OutputPath": "$.Payload",
+      "TimeoutSeconds": 10,
+      "Retry": [{
+        "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+        "IntervalSeconds": 1,
+        "MaxAttempts": 2,
+        "BackoffRate": 2
+      }],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "InvalidPayload"}],
+      "Next": "ClaimIdempotencyKey"
+    },
+    "InvalidPayload": {
+      "Type": "Fail",
+      "Error": "InvalidOrder",
+      "Cause": "Order violates the versioned input JSON Schema"
+    },
+    "ClaimIdempotencyKey": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName": "${IdempotencyTable}",
+        "Item": {
+          "idempotency_key": {"S.$": "$.order.idempotency_key"},
+          "order_id": {"S.$": "$.order.order_id"},
+          "correlation_id": {"S.$": "$.order.correlation_id"},
+          "status": {"S": "IN_PROGRESS"},
+          "execution_arn": {"S.$": "$$.Execution.Id"},
+          "created_at": {"S.$": "$$.State.EnteredTime"}
+        },
+        "ConditionExpression": "attribute_not_exists(idempotency_key)"
+      },
+      "ResultPath": "$.idempotency",
+      "Catch": [
+        {
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "Next": "DuplicateOrder"
+        },
+        {"ErrorEquals": ["States.ALL"], "Next": "InfrastructureFailure"}
+      ],
+      "Next": "InvokeNovaLite"
+    },
+    "DuplicateOrder": {
+      "Type": "Fail",
+      "Error": "DuplicateOrder",
+      "Cause": "The idempotency key has already been claimed"
+    },
+    "InvokeNovaLite": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::bedrock:invokeModel",
+      "Parameters": {
+        "ModelId": "${BedrockModelId}",
+        "ContentType": "application/json",
+        "Accept": "application/json",
+        "Body.$": "$.bedrock_request"
+      },
+      "ResultSelector": {
+        "modelText.$": "$.Body.output.message.content[0].text",
+        "stopReason.$": "$.Body.stopReason",
+        "usage.$": "$.Body.usage",
+        "retryCount.$": "$$.State.RetryCount"
+      },
+      "ResultPath": "$.bedrock",
+      "TimeoutSeconds": 20,
+      "Retry": [{
+        "ErrorEquals": [
+          "Bedrock.ThrottlingException",
+          "Bedrock.ServiceUnavailableException",
+          "Bedrock.InternalServerException",
+          "Bedrock.ModelNotReadyException"
+        ],
+        "IntervalSeconds": 2,
+        "MaxAttempts": 3,
+        "BackoffRate": 2
+      }],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "RecordModelFailure"}],
+      "Next": "ValidateModelOutput"
+    },
+    "ValidateModelOutput": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${NormalizeFunctionArn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {"value.$": "$.Payload"},
+      "ResultPath": "$.analysis",
+      "TimeoutSeconds": 10,
+      "Retry": [{
+        "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+        "IntervalSeconds": 1,
+        "MaxAttempts": 2,
+        "BackoffRate": 2
+      }],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "RecordModelFailure"}],
+      "Next": "RouteByFoodSafetyRisk"
+    },
+    "RouteByFoodSafetyRisk": {
+      "Type": "Choice",
+      "Choices": [{
+        "Variable": "$.analysis.value.risco_alergia",
+        "BooleanEquals": true,
+        "Next": "RequireFoodSafetyHandling"
+      }],
+      "Default": "UseStandardHandling"
+    },
+    "RequireFoodSafetyHandling": {
+      "Type": "Pass",
+      "Result": {"food_safety_review": "REQUIRED", "kitchen_cross_contamination_alert": true},
+      "ResultPath": "$.operational_policy",
+      "Next": "AuthorizePayment"
+    },
+    "UseStandardHandling": {
+      "Type": "Pass",
+      "Result": {"food_safety_review": "STANDARD", "kitchen_cross_contamination_alert": false},
+      "ResultPath": "$.operational_policy",
+      "Next": "AuthorizePayment"
+    },
+    "AuthorizePayment": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${PaymentFunctionArn}",
+        "Payload": {
+          "order.$": "$.order",
+          "analysis.$": "$.analysis.value"
+        }
+      },
+      "ResultSelector": {"value.$": "$.Payload"},
+      "ResultPath": "$.payment",
+      "TimeoutSeconds": 10,
+      "Retry": [{
+        "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+        "IntervalSeconds": 1,
+        "MaxAttempts": 2,
+        "BackoffRate": 2
+      }],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "RecordPaymentFailure"}],
+      "Next": "PaymentApproved"
+    },
+    "PaymentApproved": {
+      "Type": "Choice",
+      "Choices": [{
+        "Variable": "$.payment.value.status",
+        "StringEquals": "APPROVED",
+        "Next": "FulfillInParallel"
+      }],
+      "Default": "RecordPaymentFailure"
+    },
+    "FulfillInParallel": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "DispatchOrder",
+          "States": {
+            "DispatchOrder": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${DispatchFunctionArn}",
+                "Payload": {"order.$": "$.order", "analysis.$": "$.analysis.value"}
+              },
+              "OutputPath": "$.Payload",
+              "TimeoutSeconds": 10,
+              "Retry": [{
+                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 3,
+                "BackoffRate": 2
+              }],
+              "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "DispatchFailed"}],
+              "End": true
+            },
+            "DispatchFailed": {
+              "Type": "Fail",
+              "Error": "DispatchFailed",
+              "Cause": "Critical dispatch branch failed"
+            }
+          }
+        },
+        {
+          "StartAt": "NotifyCustomer",
+          "States": {
+            "NotifyCustomer": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${NotificationFunctionArn}",
+                "Payload": {"order.$": "$.order", "analysis.$": "$.analysis.value"}
+              },
+              "OutputPath": "$.Payload",
+              "TimeoutSeconds": 10,
+              "Retry": [{
+                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 2,
+                "BackoffRate": 2
+              }],
+              "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "NotificationDegraded"}],
+              "End": true
+            },
+            "NotificationDegraded": {
+              "Type": "Pass",
+              "Result": {"status": "DEGRADED", "reason": "Notification adapter failed after bounded retry"},
+              "End": true
+            }
+          }
+        }
+      ],
+      "ResultPath": "$.fulfillment",
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "RecordFulfillmentFailure"}],
+      "Next": "MarkOrderCompleted"
+    },
+    "MarkOrderCompleted": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${IdempotencyTable}",
+        "Key": {"idempotency_key": {"S.$": "$.order.idempotency_key"}},
+        "UpdateExpression": "SET #status = :status, completed_at = :completed",
+        "ExpressionAttributeNames": {"#status": "status"},
+        "ExpressionAttributeValues": {
+          ":status": {"S": "COMPLETED"},
+          ":completed": {"S.$": "$$.State.EnteredTime"},
+          ":in_progress": {"S": "IN_PROGRESS"}
+        },
+        "ConditionExpression": "#status = :in_progress"
+      },
+      "ResultPath": null,
+      "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "InfrastructureFailure"}],
+      "Next": "BuildSuccessfulResult"
+    },
+    "BuildSuccessfulResult": {
+      "Type": "Pass",
+      "Parameters": {
+        "order_id.$": "$.order.order_id",
+        "correlation_id.$": "$.order.correlation_id",
+        "workflow_status": "COMPLETED",
+        "analysis.$": "$.analysis.value",
+        "operational_policy.$": "$.operational_policy",
+        "payment.$": "$.payment.value",
+        "fulfillment.$": "$.fulfillment"
+      },
+      "Next": "OrderProcessed"
+    },
+    "OrderProcessed": {"Type": "Succeed"},
+    "RecordModelFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${IdempotencyTable}",
+        "Key": {"idempotency_key": {"S.$": "$.order.idempotency_key"}},
+        "UpdateExpression": "SET #status = :status, failure_category = :category",
+        "ExpressionAttributeNames": {"#status": "status"},
+        "ExpressionAttributeValues": {
+          ":status": {"S": "FAILED"},
+          ":category": {"S": "MODEL"}
+        }
+      },
+      "ResultPath": null,
+      "Next": "ModelContractFailure"
+    },
+    "ModelContractFailure": {
+      "Type": "Fail",
+      "Error": "ModelOutputFailure",
+      "Cause": "Bedrock invocation failed or returned output that violated the contract"
+    },
+    "RecordPaymentFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${IdempotencyTable}",
+        "Key": {"idempotency_key": {"S.$": "$.order.idempotency_key"}},
+        "UpdateExpression": "SET #status = :status, failure_category = :category",
+        "ExpressionAttributeNames": {"#status": "status"},
+        "ExpressionAttributeValues": {
+          ":status": {"S": "REJECTED"},
+          ":category": {"S": "PAYMENT"}
+        }
+      },
+      "ResultPath": null,
+      "Next": "PaymentRejected"
+    },
+    "PaymentRejected": {
+      "Type": "Fail",
+      "Error": "PaymentRejected",
+      "Cause": "Deterministic payment authorization did not approve the order"
+    },
+    "RecordFulfillmentFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${IdempotencyTable}",
+        "Key": {"idempotency_key": {"S.$": "$.order.idempotency_key"}},
+        "UpdateExpression": "SET #status = :status, failure_category = :category",
+        "ExpressionAttributeNames": {"#status": "status"},
+        "ExpressionAttributeValues": {
+          ":status": {"S": "FAILED"},
+          ":category": {"S": "FULFILLMENT"}
+        }
+      },
+      "ResultPath": null,
+      "Next": "FulfillmentFailed"
+    },
+    "FulfillmentFailed": {
+      "Type": "Fail",
+      "Error": "FulfillmentFailed",
+      "Cause": "Critical fulfillment branch failed"
+    },
+    "InfrastructureFailure": {
+      "Type": "Fail",
+      "Error": "InfrastructureFailure",
+      "Cause": "A persistence or orchestration dependency failed"
+    }
+  }
+}

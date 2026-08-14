@@ -1,0 +1,14 @@
+{
+  "order_id": "ORD-0002",
+  "idempotency_key": "idem-ord-0002",
+  "product": {"sku": "BURGER-01", "name": "Burger", "quantity": 1},
+  "notes": "Sem observacoes.",
+  "address": {
+    "city": "Curitiba",
+    "state": "PR",
+    "postal_code": "80010-000",
+    "delivery_instructions": "Portaria."
+  },
+  "payment_method": "CHEQUE"
+}
+

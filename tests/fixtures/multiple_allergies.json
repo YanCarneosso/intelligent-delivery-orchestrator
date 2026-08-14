@@ -1,0 +1,15 @@
+{
+  "order_id": "ORD-ALG-002",
+  "idempotency_key": "idem-ord-alg-002",
+  "correlation_id": "corr-ord-alg-002",
+  "product": {"sku": "MEAL-02", "name": "Prato executivo", "quantity": 1},
+  "notes": "Tenho intolerância a lactose e alergia a ovos, amendoim e frutos do mar.",
+  "address": {
+    "city": "Recife",
+    "state": "PE",
+    "postal_code": "50030-230",
+    "delivery_instructions": "Ligar ao chegar."
+  },
+  "payment_method": "PIX"
+}
+

@@ -1,0 +1,8 @@
+{
+  "order_id": "ORD-BAD-001",
+  "idempotency_key": "idem-ord-bad-001",
+  "product": {"sku": "SALAD-01", "name": "Salada", "quantity": 1},
+  "notes": "Sem gluten.",
+  "payment_method": "PIX"
+}
+

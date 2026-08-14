@@ -1,0 +1,12 @@
+{
+  "model_id": "amazon.nova-lite-v1:0",
+  "api": "InvokeModel",
+  "schema_version": "messages-v1",
+  "inference_config": {
+    "maxTokens": 512,
+    "temperature": 0,
+    "topP": 0.9
+  },
+  "note": "Versioned request configuration; this project does not deploy a Bedrock Agent."
+}
+

@@ -1,0 +1,315 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Intelligent Delivery Orchestrator reference stack
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedPattern: '^[a-z][a-z0-9-]{1,15}$'
+  BedrockModelId:
+    Type: String
+    Default: amazon.nova-lite-v1:0
+    AllowedValues:
+      - amazon.nova-lite-v1:0
+    Description: In-region Nova Lite model. The reference stack defaults to us-east-1.
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [7, 14, 30, 60, 90]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [x86_64]
+    MemorySize: 256
+    Timeout: 10
+    Tracing: PassThrough
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+        PROJECT_ROOT: /var/task
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Writes application logs only; business AWS calls are orchestrated by Step Functions.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ScopedApplicationLogging
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ido-${Environment}-*:*
+
+  ValidateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ido-${Environment}-validate
+      Description: Validates the input contract and creates a PII-minimized Nova request.
+      CodeUri: src/
+      Handler: delivery_orchestrator.handlers.input_validation.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  NormalizeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ido-${Environment}-normalize
+      Description: Validates untrusted model output and applies deterministic safety precedence.
+      CodeUri: src/
+      Handler: delivery_orchestrator.handlers.normalize.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  PaymentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ido-${Environment}-payment-reference
+      Description: Non-charging reference adapter; replace with a PCI-compliant payment provider.
+      CodeUri: src/
+      Handler: delivery_orchestrator.handlers.payment.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  DispatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ido-${Environment}-dispatch-reference
+      Description: Non-dispatching reference adapter; replace with a logistics provider.
+      CodeUri: src/
+      Handler: delivery_orchestrator.handlers.dispatch.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  NotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ido-${Environment}-notify-reference
+      Description: Non-sending reference adapter; replace with a notification provider.
+      CodeUri: src/
+      Handler: delivery_orchestrator.handlers.notification.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  ValidateFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/ido-${Environment}-validate
+      RetentionInDays: !Ref LogRetentionDays
+  NormalizeFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/ido-${Environment}-normalize
+      RetentionInDays: !Ref LogRetentionDays
+  PaymentFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/ido-${Environment}-payment-reference
+      RetentionInDays: !Ref LogRetentionDays
+  DispatchFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/ido-${Environment}-dispatch-reference
+      RetentionInDays: !Ref LogRetentionDays
+  NotificationFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/ido-${Environment}-notify-reference
+      RetentionInDays: !Ref LogRetentionDays
+
+  IdempotencyTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ido-${Environment}-idempotency
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: idempotency_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: idempotency_key
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Application
+          Value: intelligent-delivery-orchestrator
+        - Key: DataClassification
+          Value: internal-identifiers
+
+  StateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/vendedlogs/states/ido-${Environment}
+      RetentionInDays: !Ref LogRetentionDays
+
+  StateMachineExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Least-privilege role for deterministic workflow orchestration.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: states.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeWorkflowFunctions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt ValidateFunction.Arn
+                  - !GetAtt NormalizeFunction.Arn
+                  - !GetAtt PaymentFunction.Arn
+                  - !GetAtt DispatchFunction.Arn
+                  - !GetAtt NotificationFunction.Arn
+        - PolicyName: InvokeNovaLiteOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
+        - PolicyName: IdempotencyStateOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt IdempotencyTable.Arn
+        - PolicyName: StepFunctionsLogDelivery
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: LogDeliveryApisWithoutResourceLevelPermissions
+                Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: '*'
+
+  DeliveryStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ido-${Environment}
+      Type: STANDARD
+      DefinitionUri: aws-step-functions/workflow.asl.json
+      DefinitionSubstitutions:
+        ValidateFunctionArn: !GetAtt ValidateFunction.Arn
+        NormalizeFunctionArn: !GetAtt NormalizeFunction.Arn
+        PaymentFunctionArn: !GetAtt PaymentFunction.Arn
+        DispatchFunctionArn: !GetAtt DispatchFunction.Arn
+        NotificationFunctionArn: !GetAtt NotificationFunction.Arn
+        IdempotencyTable: !Ref IdempotencyTable
+        BedrockModelId: !Ref BedrockModelId
+      Role: !GetAtt StateMachineExecutionRole.Arn
+      Logging:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogGroup.Arn
+        IncludeExecutionData: false
+        Level: ERROR
+      Tags:
+        Application: intelligent-delivery-orchestrator
+        Environment: !Ref Environment
+
+  WorkflowFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Delivery workflow has at least one failed execution in five minutes.
+      Namespace: AWS/States
+      MetricName: ExecutionsFailed
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !Ref DeliveryStateMachine
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  WorkflowTimeoutAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Delivery workflow timed out.
+      Namespace: AWS/States
+      MetricName: ExecutionsTimedOut
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !Ref DeliveryStateMachine
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  DeliveryDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ido-${Environment}
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Workflow outcomes", "region": "${AWS::Region}", "stat": "Sum", "period": 300,
+                "metrics": [
+                  ["AWS/States", "ExecutionsSucceeded", "StateMachineArn", "${DeliveryStateMachine}"],
+                  [".", "ExecutionsFailed", ".", "."],
+                  [".", "ExecutionsTimedOut", ".", "."]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Execution latency", "region": "${AWS::Region}", "stat": "Average", "period": 300,
+                "metrics": [["AWS/States", "ExecutionTime", "StateMachineArn", "${DeliveryStateMachine}"]]
+              }
+            },
+            {
+              "type": "metric", "x": 0, "y": 6, "width": 24, "height": 6,
+              "properties": {
+                "title": "Cognitive and safety signals", "region": "${AWS::Region}", "stat": "Sum", "period": 300,
+                "metrics": [
+                  ["IntelligentDeliveryOrchestrator", "BedrockCalls", "Service", "DeliveryOrchestrator"],
+                  [".", "AllergyRiskOrders", ".", "."],
+                  [".", "HighPriorityOrders", ".", "."],
+                  [".", "BedrockRetries", ".", "."],
+                  [".", "BedrockInputTokens", ".", "."],
+                  [".", "BedrockOutputTokens", ".", "."]
+                ]
+              }
+            }
+          ]
+        }
+
+Outputs:
+  StateMachineArn:
+    Description: Start Standard Workflow executions with this ARN.
+    Value: !Ref DeliveryStateMachine
+  IdempotencyTableName:
+    Value: !Ref IdempotencyTable
+  DashboardName:
+    Value: !Ref DeliveryDashboard

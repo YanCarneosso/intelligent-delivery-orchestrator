@@ -1,0 +1,15 @@
+{
+  "order_id": "ORD-ANX-001",
+  "idempotency_key": "idem-ord-anx-001",
+  "correlation_id": "corr-ord-anx-001",
+  "product": {"sku": "SOUP-01", "name": "Sopa de legumes", "quantity": 1},
+  "notes": "Estou muito ansioso e preocupado com o atraso, por favor seja rápido.",
+  "address": {
+    "city": "Porto Alegre",
+    "state": "RS",
+    "postal_code": "90010-150",
+    "delivery_instructions": "Apartamento informado ao entregador."
+  },
+  "payment_method": "CASH"
+}
+

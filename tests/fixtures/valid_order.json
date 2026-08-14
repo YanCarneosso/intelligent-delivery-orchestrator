@@ -1,0 +1,15 @@
+{
+  "order_id": "ORD-0001",
+  "idempotency_key": "idem-ord-0001",
+  "correlation_id": "corr-ord-0001",
+  "product": {"sku": "PIZZA-01", "name": "Pizza margherita", "quantity": 1},
+  "notes": "Por favor, preparar sem cebola porque tenho alergia.",
+  "address": {
+    "city": "Sao Paulo",
+    "state": "SP",
+    "postal_code": "01001-000",
+    "delivery_instructions": "Entregar na portaria."
+  },
+  "payment_method": "PIX"
+}
+

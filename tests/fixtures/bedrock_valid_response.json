@@ -1,0 +1,13 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [{
+        "text": "{\"intent\":\"ORDER\",\"analise_sentimento\":\"NEUTRAL\",\"prioridade\":\"NORMAL\",\"risco_alergia\":false,\"restricoes\":[],\"confidence\":0.94}"
+      }]
+    }
+  },
+  "stopReason": "end_turn",
+  "usage": {"inputTokens": 600, "outputTokens": 70, "totalTokens": 670}
+}
+
