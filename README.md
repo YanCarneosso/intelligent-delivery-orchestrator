@@ -1,16 +1,25 @@
-<div align="center">
-  <img src="docs/assets/agentes-de-ia-em-campo.png" width="280" alt="Selo Agentes de IA em Campo — AWS">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/cover-dark.svg">
+  <img src="docs/assets/cover-light.svg" width="100%" alt="Intelligent Delivery Orchestrator — LLM dentro de um workflow determinístico. Mais de 40 testes, 7 ADRs e CI.">
+</picture>
 
-  # Intelligent Delivery Orchestrator
+<p align="center"><strong>Orquestração serverless de pedidos de delivery com IA generativa, decisões auditáveis e segurança alimentar.</strong></p>
 
-  **Orquestração serverless de pedidos de delivery com IA generativa, decisões auditáveis e segurança alimentar.**
+<p align="center">
+  <a href="https://github.com/YanCarneosso/intelligent-delivery-orchestrator/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/YanCarneosso/intelligent-delivery-orchestrator/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
+  <img alt="AWS Serverless" src="https://img.shields.io/badge/AWS-Serverless-FF9900?logo=amazonwebservices&logoColor=white">
+  <img alt="Amazon Bedrock" src="https://img.shields.io/badge/Amazon-Bedrock-8A2BE2">
+  <a href="LICENSE"><img alt="Licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg"></a>
+</p>
 
-  [![CI](https://github.com/YanCarneosso/intelligent-delivery-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/YanCarneosso/intelligent-delivery-orchestrator/actions/workflows/ci.yml)
-  ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-  ![AWS](https://img.shields.io/badge/AWS-Serverless-FF9900?logo=amazonwebservices&logoColor=white)
-  ![Amazon Bedrock](https://img.shields.io/badge/Amazon-Bedrock-8A2BE2)
-  [![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE)
-</div>
+## Em 30 segundos
+
+- **Problema:** pedidos chegam em linguagem natural, com intenção, sentimento e restrições alimentares implícitas. Delegar decisões críticas a um LLM traz riscos como alergias ignoradas, pagamentos duplicados e *prompt injection*.
+- **Solução:** workflow serverless em AWS Step Functions no qual o Amazon Nova Lite, via Bedrock, apenas interpreta o pedido, com saída validada por JSON Schema. Pagamento, idempotência, retries, despacho e auditoria permanecem determinísticos.
+- **Resultado:** uma resposta inválida do modelo ou uma tentativa de *prompt injection* não remove um risco de alergia já identificado. Mais de 40 testes (unitários, de contrato, de segurança e de workflow), CI, 7 ADRs, runbook operacional e demo local sem conta AWS.
+- **Stack:** Python 3.12 · AWS SAM · Step Functions · Amazon Bedrock (Nova Lite) · Lambda · DynamoDB · CloudWatch
+- **Por onde começar:** [guia para recrutadores](docs/recruiter-guide.md) (cerca de 5 minutos) · [arquitetura](docs/architecture.md) · [decisões de arquitetura](docs/adr/)
 
 ## Sobre o projeto
 
@@ -95,6 +104,8 @@ O demo é identificado como `LOCAL_DETERMINISTIC_MOCK`: ele exercita o fluxo rea
 Os adaptadores de pagamento, despacho e notificação são referências sem efeitos externos. Resultados locais não são apresentados como medições de produção, e nenhum benefício de negócio é tratado como resultado comprovado sem uma integração real.
 
 ## Autor
+
+<img src="docs/assets/agentes-de-ia-em-campo.png" width="160" alt="Selo Agentes de IA em Campo — AWS" align="right">
 
 Implementação independente desenvolvida por **Yan Costa Carneosso**.
 
